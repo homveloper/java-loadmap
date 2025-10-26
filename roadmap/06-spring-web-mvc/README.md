@@ -664,6 +664,400 @@ public class ProductController {
 
 ---
 
+## 8. 명시적 라우팅 (Functional Endpoints)
+
+### 8.1 어노테이션 vs 함수형 라우팅 비교
+
+Spring에서는 어노테이션 방식 외에도 **함수형 엔드포인트(Functional Endpoints)**를 사용하여 명시적으로 라우트를 정의할 수 있습니다.
+
+| 방식 | 어노테이션 기반 | 함수형 엔드포인트 |
+|------|----------------|------------------|
+| **정의 방법** | @RestController, @GetMapping | RouterFunction, HandlerFunction |
+| **타입** | 선언적(Declarative) | 명시적(Explicit) |
+| **장점** | 간단하고 직관적 | 프로그래매틱, 동적 라우팅 가능 |
+| **유연성** | 낮음 | 높음 |
+
+### 8.2 기본 함수형 엔드포인트
+
+**어노테이션 방식**:
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    @GetMapping("/{id}")
+    public User getUser(@PathVariable Long id) {
+        return userService.findById(id);
+    }
+
+    @PostMapping
+    public User createUser(@RequestBody User user) {
+        return userService.save(user);
+    }
+}
+```
+
+**함수형 엔드포인트 방식**:
+```java
+// Handler 클래스
+@Component
+public class UserHandler {
+
+    private final UserService userService;
+
+    public UserHandler(UserService userService) {
+        this.userService = userService;
+    }
+
+    // HandlerFunction 정의
+    public Mono<ServerResponse> getUser(ServerRequest request) {
+        Long id = Long.parseLong(request.pathVariable("id"));
+        User user = userService.findById(id);
+
+        return ServerResponse.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(user);
+    }
+
+    public Mono<ServerResponse> createUser(ServerRequest request) {
+        User user = request.bodyToMono(User.class).block();
+        User saved = userService.save(user);
+
+        return ServerResponse.status(HttpStatus.CREATED)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(saved);
+    }
+
+    public Mono<ServerResponse> listUsers(ServerRequest request) {
+        List<User> users = userService.findAll();
+
+        return ServerResponse.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(users);
+    }
+}
+
+// Router 설정
+@Configuration
+public class UserRouter {
+
+    @Bean
+    public RouterFunction<ServerResponse> userRoutes(UserHandler handler) {
+        return RouterFunctions
+            .route(GET("/api/users/{id}"), handler::getUser)
+            .andRoute(GET("/api/users"), handler::listUsers)
+            .andRoute(POST("/api/users"), handler::createUser);
+    }
+}
+```
+
+### 8.3 고급 라우팅 패턴
+
+```java
+@Configuration
+public class ApiRouter {
+
+    @Bean
+    public RouterFunction<ServerResponse> routes(
+            UserHandler userHandler,
+            PostHandler postHandler) {
+
+        return RouterFunctions
+            // 중첩된 라우트 (Nested Routes)
+            .nest(path("/api"),
+                RouterFunctions
+                    // User 라우트
+                    .nest(path("/users"),
+                        route(GET(""), userHandler::listUsers)
+                            .andRoute(GET("/{id}"), userHandler::getUser)
+                            .andRoute(POST(""), userHandler::createUser)
+                            .andRoute(PUT("/{id}"), userHandler::updateUser)
+                            .andRoute(DELETE("/{id}"), userHandler::deleteUser))
+
+                    // Post 라우트
+                    .andNest(path("/posts"),
+                        route(GET(""), postHandler::listPosts)
+                            .andRoute(POST(""), postHandler::createPost))
+            )
+
+            // 조건부 라우팅 (Predicate)
+            .andRoute(GET("/api/users/{id}")
+                .and(accept(MediaType.APPLICATION_JSON)),
+                userHandler::getUser)
+
+            // 헤더 조건
+            .andRoute(GET("/api/admin/users")
+                .and(headers(h -> h.header("X-Admin-Token").contains("secret"))),
+                userHandler::adminListUsers)
+
+            // 쿼리 파라미터 조건
+            .andRoute(GET("/api/users/search")
+                .and(queryParam("name", name -> !name.isEmpty())),
+                userHandler::searchUsers);
+    }
+}
+```
+
+### 8.4 요청/응답 처리
+
+```java
+@Component
+public class ProductHandler {
+
+    private final ProductService productService;
+
+    // 경로 변수 추출
+    public Mono<ServerResponse> getProduct(ServerRequest request) {
+        Long id = Long.parseLong(request.pathVariable("id"));
+        Optional<Product> product = productService.findById(id);
+
+        return product
+            .map(p -> ServerResponse.ok().body(p))
+            .orElse(ServerResponse.notFound().build());
+    }
+
+    // 쿼리 파라미터 추출
+    public Mono<ServerResponse> searchProducts(ServerRequest request) {
+        String category = request.queryParam("category").orElse("");
+        int page = request.queryParam("page")
+            .map(Integer::parseInt)
+            .orElse(0);
+        int size = request.queryParam("size")
+            .map(Integer::parseInt)
+            .orElse(10);
+
+        List<Product> products = productService.search(category, page, size);
+
+        return ServerResponse.ok().body(products);
+    }
+
+    // 요청 본문 처리
+    public Mono<ServerResponse> createProduct(ServerRequest request) {
+        return request.bodyToMono(CreateProductRequest.class)
+            .map(productService::create)
+            .flatMap(product -> ServerResponse
+                .status(HttpStatus.CREATED)
+                .header("Location", "/api/products/" + product.getId())
+                .body(product))
+            .onErrorResume(e -> ServerResponse
+                .badRequest()
+                .body(Map.of("error", e.getMessage())));
+    }
+
+    // 헤더 읽기
+    public Mono<ServerResponse> secureEndpoint(ServerRequest request) {
+        String token = request.headers()
+            .firstHeader("Authorization");
+
+        if (token == null || !token.startsWith("Bearer ")) {
+            return ServerResponse.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        return ServerResponse.ok().body("Authorized");
+    }
+}
+```
+
+### 8.5 필터와 예외 처리
+
+```java
+@Configuration
+public class RouterConfig {
+
+    @Bean
+    public RouterFunction<ServerResponse> routes(UserHandler handler) {
+        return RouterFunctions
+            .route(GET("/api/users/{id}"), handler::getUser)
+            .andRoute(POST("/api/users"), handler::createUser)
+
+            // 라우트별 필터 적용
+            .filter((request, next) -> {
+                System.out.println("Request: " + request.method() + " " + request.uri());
+                long startTime = System.currentTimeMillis();
+
+                return next.handle(request)
+                    .doOnNext(response -> {
+                        long duration = System.currentTimeMillis() - startTime;
+                        System.out.println("Response: " + response.statusCode() +
+                                         " (" + duration + "ms)");
+                    });
+            })
+
+            // 에러 핸들링
+            .filter((request, next) ->
+                next.handle(request)
+                    .onErrorResume(ResourceNotFoundException.class, e ->
+                        ServerResponse.status(HttpStatus.NOT_FOUND)
+                            .body(Map.of("error", e.getMessage())))
+                    .onErrorResume(ValidationException.class, e ->
+                        ServerResponse.badRequest()
+                            .body(Map.of("error", e.getMessage())))
+                    .onErrorResume(Exception.class, e ->
+                        ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(Map.of("error", "Internal server error")))
+            );
+    }
+}
+```
+
+### 8.6 Golang 스타일 라우팅 비교
+
+**Golang (Gin)**:
+```go
+func SetupRoutes(r *gin.Engine) {
+    api := r.Group("/api")
+    {
+        users := api.Group("/users")
+        {
+            users.GET("", listUsers)
+            users.GET("/:id", getUser)
+            users.POST("", createUser)
+            users.PUT("/:id", updateUser)
+            users.DELETE("/:id", deleteUser)
+        }
+
+        posts := api.Group("/posts")
+        {
+            posts.GET("", listPosts)
+            posts.POST("", createPost)
+        }
+    }
+}
+
+func getUser(c *gin.Context) {
+    id := c.Param("id")
+    user, err := userService.FindByID(id)
+
+    if err != nil {
+        c.JSON(404, gin.H{"error": "User not found"})
+        return
+    }
+
+    c.JSON(200, user)
+}
+```
+
+**Spring 함수형 엔드포인트**:
+```java
+@Bean
+public RouterFunction<ServerResponse> routes(
+        UserHandler userHandler,
+        PostHandler postHandler) {
+
+    return nest(path("/api"),
+        nest(path("/users"),
+            route(GET(""), userHandler::listUsers)
+                .andRoute(GET("/{id}"), userHandler::getUser)
+                .andRoute(POST(""), userHandler::createUser)
+                .andRoute(PUT("/{id}"), userHandler::updateUser)
+                .andRoute(DELETE("/{id}"), userHandler::deleteUser))
+        .andNest(path("/posts"),
+            route(GET(""), postHandler::listPosts)
+                .andRoute(POST(""), postHandler::createPost))
+    );
+}
+```
+
+### 8.7 완전한 예시: 블로그 API (함수형 스타일)
+
+```java
+// Handler
+@Component
+public class BlogHandler {
+
+    private final PostService postService;
+
+    public BlogHandler(PostService postService) {
+        this.postService = postService;
+    }
+
+    public Mono<ServerResponse> listPosts(ServerRequest request) {
+        int page = request.queryParam("page")
+            .map(Integer::parseInt).orElse(0);
+        int size = request.queryParam("size")
+            .map(Integer::parseInt).orElse(10);
+
+        Page<Post> posts = postService.findAll(PageRequest.of(page, size));
+
+        return ServerResponse.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(posts);
+    }
+
+    public Mono<ServerResponse> getPost(ServerRequest request) {
+        Long id = Long.parseLong(request.pathVariable("id"));
+
+        return postService.findById(id)
+            .map(post -> ServerResponse.ok().body(post))
+            .orElse(ServerResponse.notFound().build());
+    }
+
+    public Mono<ServerResponse> createPost(ServerRequest request) {
+        return request.bodyToMono(CreatePostRequest.class)
+            .map(postService::create)
+            .flatMap(post -> ServerResponse
+                .status(HttpStatus.CREATED)
+                .body(post));
+    }
+
+    public Mono<ServerResponse> updatePost(ServerRequest request) {
+        Long id = Long.parseLong(request.pathVariable("id"));
+
+        return request.bodyToMono(UpdatePostRequest.class)
+            .map(req -> postService.update(id, req))
+            .flatMap(post -> ServerResponse.ok().body(post))
+            .onErrorResume(ResourceNotFoundException.class,
+                e -> ServerResponse.notFound().build());
+    }
+
+    public Mono<ServerResponse> deletePost(ServerRequest request) {
+        Long id = Long.parseLong(request.pathVariable("id"));
+        postService.delete(id);
+
+        return ServerResponse.noContent().build();
+    }
+}
+
+// Router Configuration
+@Configuration
+public class BlogRouter {
+
+    @Bean
+    public RouterFunction<ServerResponse> blogRoutes(BlogHandler handler) {
+        return RouterFunctions
+            .nest(path("/api/posts"),
+                route(GET(""), handler::listPosts)
+                    .andRoute(GET("/{id}"), handler::getPost)
+                    .andRoute(POST(""), handler::createPost)
+                    .andRoute(PUT("/{id}"), handler::updatePost)
+                    .andRoute(DELETE("/{id}"), handler::deletePost)
+            )
+            // 로깅 필터
+            .filter((request, next) -> {
+                System.out.println("Request: " + request.method() + " " + request.uri());
+                return next.handle(request);
+            });
+    }
+}
+```
+
+### 8.8 언제 함수형 엔드포인트를 사용할까?
+
+**어노테이션 방식을 사용하는 경우**:
+- 간단한 CRUD API
+- 팀이 어노테이션 방식에 익숙한 경우
+- 빠른 개발이 필요한 경우
+
+**함수형 엔드포인트를 사용하는 경우**:
+- 동적으로 라우트를 생성해야 하는 경우
+- 복잡한 라우팅 조건이 필요한 경우
+- 함수형 프로그래밍 스타일을 선호하는 경우
+- WebFlux와 반응형 프로그래밍을 사용하는 경우
+
+**혼용 가능**: 두 방식을 같은 프로젝트에서 함께 사용할 수 있습니다!
+
+---
+
 ## 🛠 실습 프로젝트: 간단한 블로그 API
 
 ```java
@@ -782,6 +1176,8 @@ public class PostController {
 - [ ] Filter와 Interceptor 차이
 - [ ] CORS 설정
 - [ ] 페이징과 정렬
+- [ ] 함수형 엔드포인트 (RouterFunction, HandlerFunction)
+- [ ] 명시적 라우팅과 어노테이션 방식 비교
 - [ ] 실습 프로젝트 (블로그 API) 완료
 
 ---
