@@ -2,16 +2,26 @@
 
 README의 블로그 API 예제를 실제로 동작하는 단일 Java 파일로 구현한 프로젝트입니다.
 
+## 주요 기능
+
+이 프로젝트는 동일한 블로그 API를 **세 가지 방식**으로 제공합니다:
+
+1. **어노테이션 방식 REST API** (`@RestController`) - 전통적인 Spring MVC 방식
+2. **Functional Endpoints** (`RouterFunction`) - 명시적 라우팅 방식
+3. **gRPC Service** - 고성능 RPC 프로토콜
+
 ## 프로젝트 구조
 
 ```
 blog-api/
-├── pom.xml                                          # Maven 빌드 설정
+├── pom.xml                                          # Maven 빌드 설정 (gRPC 포함)
 ├── src/
 │   └── main/
 │       ├── java/
 │       │   └── com/example/blog/
 │       │       └── BlogApiApplication.java         # 모든 코드가 포함된 단일 파일
+│       ├── proto/
+│       │   └── blog.proto                          # gRPC Protocol Buffer 정의
 │       └── resources/
 │           └── application.properties              # Spring Boot 설정
 └── README.md
@@ -21,23 +31,30 @@ blog-api/
 
 `BlogApiApplication.java` 단일 파일에 다음 모든 컴포넌트가 포함되어 있습니다:
 
+### 공통 컴포넌트
 - **Spring Boot Application**: 메인 애플리케이션 클래스
 - **Entity**: `Post` - JPA 엔티티
 - **Repository**: `PostRepository` - Spring Data JPA 리포지토리
 - **Service**: `PostService` - 비즈니스 로직
-- **Controller**: `PostController` - REST API 엔드포인트
 - **DTOs**: `CreatePostRequest`, `UpdatePostRequest` - 데이터 전송 객체
 - **Exception Handler**: `GlobalExceptionHandler` - 전역 예외 처리
 - **Custom Exceptions**: `ResourceNotFoundException` - 커스텀 예외
+
+### API 레이어 (3가지 방식)
+- **PostController** - 어노테이션 방식 REST API (`@RestController`)
+- **PostHandler + PostRouter** - Functional Endpoints (명시적 라우팅)
+- **BlogGrpcService** - gRPC 서비스 구현
 
 ## 기술 스택
 
 - Java 17
 - Spring Boot 3.2.0
-- Spring Web MVC
+- Spring Web MVC (어노테이션 + Functional Endpoints)
 - Spring Data JPA
 - Spring Validation
 - H2 Database (인메모리 데이터베이스)
+- gRPC + Protocol Buffers
+- grpc-spring-boot-starter
 - Maven
 
 ## 실행 방법
@@ -68,13 +85,30 @@ java -jar target/blog-api-1.0.0.jar
 
 ### 3. 애플리케이션 접속
 
-- API 서버: http://localhost:8080
-- H2 Console: http://localhost:8080/h2-console
+- **REST API 서버**: http://localhost:8080
+- **gRPC 서버**: localhost:9090
+- **H2 Console**: http://localhost:8080/h2-console
   - JDBC URL: `jdbc:h2:mem:blogdb`
   - Username: `sa`
   - Password: (비워두기)
 
 ## API 엔드포인트
+
+이 애플리케이션은 동일한 기능을 3가지 방식으로 제공합니다:
+
+| 기능 | 어노테이션 방식 | Functional Endpoints | gRPC |
+|------|----------------|---------------------|------|
+| 전체 조회 | GET /api/posts | GET /functional/posts | ListPosts |
+| 단건 조회 | GET /api/posts/{id} | GET /functional/posts/{id} | GetPost |
+| 생성 | POST /api/posts | POST /functional/posts | CreatePost |
+| 수정 | PUT /api/posts/{id} | PUT /functional/posts/{id} | UpdatePost |
+| 삭제 | DELETE /api/posts/{id} | DELETE /functional/posts/{id} | DeletePost |
+
+---
+
+## A. 어노테이션 방식 REST API (`/api/posts`)
+
+전통적인 Spring MVC 방식으로, `@RestController` 어노테이션을 사용합니다.
 
 ### 1. 모든 게시글 조회
 
@@ -258,17 +292,169 @@ GlobalExceptionHandler가 다음 예외들을 처리합니다:
 
 Post 엔티티는 `@PrePersist`와 `@PreUpdate`를 사용하여 자동으로 생성 및 수정 시간을 기록합니다.
 
+---
+
+## B. Functional Endpoints (`/functional/posts`)
+
+명시적 라우팅 방식으로, Golang의 Gin/Echo와 유사한 패턴입니다.
+
+**특징**:
+- `RouterFunction`과 `HandlerFunction`을 사용하여 명시적으로 라우트 정의
+- 어노테이션 없이 프로그래매틱하게 라우팅 설정
+- 필터와 미들웨어를 체이닝 방식으로 적용 가능
+
+### 예시
+
+```bash
+# 모든 게시글 조회
+curl http://localhost:8080/functional/posts
+
+# 특정 게시글 조회
+curl http://localhost:8080/functional/posts/1
+
+# 게시글 생성
+curl -X POST http://localhost:8080/functional/posts \
+  -H "Content-Type: application/json" \
+  -d '{"title":"새 게시글","content":"내용","author":"작성자"}'
+
+# 게시글 수정
+curl -X PUT http://localhost:8080/functional/posts/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"수정된 제목","content":"수정된 내용"}'
+
+# 게시글 삭제
+curl -X DELETE http://localhost:8080/functional/posts/1
+```
+
+**코드 비교**:
+
+```java
+// 어노테이션 방식
+@RestController
+@RequestMapping("/api/posts")
+public class PostController {
+    @GetMapping("/{id}")
+    public Post getPost(@PathVariable Long id) { ... }
+}
+
+// Functional Endpoints 방식
+@Configuration
+public class PostRouter {
+    @Bean
+    public RouterFunction<ServerResponse> routes(PostHandler handler) {
+        return route(GET("/functional/posts/{id}"), handler::getPost);
+    }
+}
+```
+
+---
+
+## C. gRPC API (`:9090`)
+
+고성능 RPC 프로토콜로, HTTP/2와 Protocol Buffers를 사용합니다.
+
+**특징**:
+- 바이너리 프로토콜로 JSON보다 빠르고 효율적
+- 타입 안전성 (proto 파일로 스키마 정의)
+- 양방향 스트리밍 지원
+- 다국어 클라이언트 자동 생성
+
+### 사용 방법
+
+#### 1. grpcurl 설치
+
+```bash
+# Mac
+brew install grpcurl
+
+# Linux
+wget https://github.com/fullstorydev/grpcurl/releases/download/v1.8.9/grpcurl_1.8.9_linux_x86_64.tar.gz
+tar -xvf grpcurl_1.8.9_linux_x86_64.tar.gz
+sudo mv grpcurl /usr/local/bin/
+
+# Windows (Chocolatey)
+choco install grpcurl
+```
+
+#### 2. gRPC 서비스 확인
+
+```bash
+# 서비스 목록 확인
+grpcurl -plaintext localhost:9090 list
+
+# 서비스 메서드 확인
+grpcurl -plaintext localhost:9090 list blog.BlogService
+
+# 메서드 상세 정보
+grpcurl -plaintext localhost:9090 describe blog.BlogService.CreatePost
+```
+
+#### 3. gRPC 호출 예시
+
+```bash
+# 모든 게시글 조회
+grpcurl -plaintext -d '{}' localhost:9090 blog.BlogService/ListPosts
+
+# 작성자별 필터링
+grpcurl -plaintext -d '{"author":"홍길동"}' localhost:9090 blog.BlogService/ListPosts
+
+# 특정 게시글 조회
+grpcurl -plaintext -d '{"id":1}' localhost:9090 blog.BlogService/GetPost
+
+# 게시글 생성
+grpcurl -plaintext -d '{
+  "title":"gRPC로 생성한 게시글",
+  "content":"gRPC는 빠르고 효율적입니다!",
+  "author":"김개발"
+}' localhost:9090 blog.BlogService/CreatePost
+
+# 게시글 수정
+grpcurl -plaintext -d '{
+  "id":1,
+  "title":"수정된 제목",
+  "content":"수정된 내용"
+}' localhost:9090 blog.BlogService/UpdatePost
+
+# 게시글 삭제
+grpcurl -plaintext -d '{"id":1}' localhost:9090 blog.BlogService/DeletePost
+```
+
+### REST vs gRPC 비교
+
+| 특성 | REST (JSON) | gRPC (Protobuf) |
+|------|------------|-----------------|
+| 프로토콜 | HTTP/1.1 | HTTP/2 |
+| 데이터 형식 | JSON (텍스트) | Protobuf (바이너리) |
+| 성능 | 보통 | 빠름 (3-10배) |
+| 스키마 | 선택적 (OpenAPI) | 필수 (.proto) |
+| 브라우저 지원 | 좋음 | 제한적 |
+| 스트리밍 | 제한적 | 양방향 지원 |
+| 사용 사례 | 외부 API, 웹 앱 | 마이크로서비스 간 통신 |
+
+---
+
 ## 학습 포인트
 
 이 예제를 통해 다음을 학습할 수 있습니다:
 
-1. **단일 파일 구조**: 모든 컴포넌트가 하나의 파일에 정리되어 있어 전체 구조를 한눈에 파악 가능
-2. **REST API 설계**: RESTful 원칙에 따른 API 엔드포인트 설계
-3. **Spring MVC**: `@RestController`, `@RequestMapping` 등의 어노테이션 활용
-4. **Spring Data JPA**: JpaRepository를 통한 데이터베이스 CRUD 작업
-5. **Bean Validation**: `@Valid`, `@NotBlank` 등을 통한 입력 검증
-6. **예외 처리**: `@RestControllerAdvice`를 통한 전역 예외 처리
-7. **DTO 패턴**: 요청/응답 데이터 분리
+### 1. 다양한 API 스타일
+- **어노테이션 방식**: 간결하고 직관적, 대부분의 Spring 프로젝트에서 사용
+- **Functional Endpoints**: 명시적 라우팅, 동적 설정 가능, WebFlux와 호환성
+- **gRPC**: 고성능 RPC, 마이크로서비스 아키텍처에 적합
+
+### 2. Spring 핵심 개념
+- **단일 파일 구조**: 모든 컴포넌트가 하나의 파일에 정리되어 있어 전체 구조를 한눈에 파악 가능
+- **REST API 설계**: RESTful 원칙에 따른 API 엔드포인트 설계
+- **Spring MVC**: `@RestController`, `@RequestMapping` 등의 어노테이션 활용
+- **Spring Data JPA**: JpaRepository를 통한 데이터베이스 CRUD 작업
+- **Bean Validation**: `@Valid`, `@NotBlank` 등을 통한 입력 검증
+- **예외 처리**: `@RestControllerAdvice`를 통한 전역 예외 처리
+- **DTO 패턴**: 요청/응답 데이터 분리
+
+### 3. 실전 패턴
+- **Golang 스타일 라우팅**: Functional Endpoints로 Gin/Echo와 유사한 패턴 구현
+- **RPC 통신**: gRPC를 통한 효율적인 서비스 간 통신
+- **프로토콜 버퍼**: 타입 안전한 API 계약
 
 ## 확장 아이디어
 
