@@ -33,6 +33,22 @@ Phase 4: 프로덕션 준비 (2-3주)
 
 ---
 
+## 💎 Best Practices
+
+**⭐ [Golang과 Java 철학의 융합 - 프로덕션 레벨 Best Practices](./best-practices/)**
+
+백엔드 웹 개발을 위한 실용적인 패턴과 원칙:
+- **Error as Value**: Exception 대신 Result 패턴으로 명시적 에러 처리
+- **Composition over Inheritance**: 상속보다 컴포지션으로 유연한 설계
+- **Static Factory Methods**: 생성자 대신 의미있는 팩토리 메서드
+- **Dependency Injection & IoC**: 테스트 가능하고 유지보수 쉬운 코드
+- **Value Objects**: Primitive Obsession 탈피
+- **Rich Domain Model**: 비즈니스 로직을 도메인에
+
+> 실제 작동하는 코드 예제와 함께 Golang의 실용성과 Java의 타입 안전성을 결합한 설계 가이드를 제공합니다.
+
+---
+
 ## 🎯 학습 로드맵 상세
 
 ### Phase 1: Java 기초 다지기 (3-4주)
