@@ -45,7 +45,8 @@ import static org.springframework.web.servlet.function.RouterFunctions.route;
  * - Service (PostService)
  * - REST Controller (PostController) - 어노테이션 방식
  * - Functional Endpoints (PostHandler, PostRouter) - 명시적 라우팅
- * - gRPC Service (BlogGrpcService) - RPC 바인딩
+ * - JSON-RPC Controller (JsonRpcController) - JSON-RPC over HTTP
+ * - gRPC Service (BlogGrpcService) - gRPC 바인딩
  * - Global Exception Handler
  * - Custom Exceptions
  * - DTOs (CreatePostRequest, UpdatePostRequest)
@@ -68,6 +69,13 @@ import static org.springframework.web.servlet.function.RouterFunctions.route;
  * POST   /functional/posts        - 새 게시글 생성
  * PUT    /functional/posts/{id}   - 게시글 수정
  * DELETE /functional/posts/{id}   - 게시글 삭제
+ *
+ * [JSON-RPC - POST /jsonrpc]
+ * post.list     - 모든 게시글 조회
+ * post.get      - 특정 게시글 조회
+ * post.create   - 새 게시글 생성
+ * post.update   - 게시글 수정
+ * post.delete   - 게시글 삭제
  *
  * [gRPC - port 9090]
  * ListPosts    - 모든 게시글 조회
@@ -899,5 +907,437 @@ class BlogGrpcService extends BlogServiceGrpc.BlogServiceImplBase {
         }
 
         return builder.build();
+    }
+}
+
+// ============================================================
+// JSON-RPC over HTTP (RPC 바인딩)
+// ============================================================
+
+/**
+ * JSON-RPC 2.0 프로토콜 구현
+ *
+ * JSON-RPC는 경량 RPC 프로토콜로, HTTP POST를 통해 JSON 형식으로 원격 프로시저를 호출합니다.
+ *
+ * 프로토콜 사양:
+ * - 요청: {"jsonrpc":"2.0", "method":"methodName", "params":{...}, "id":1}
+ * - 응답: {"jsonrpc":"2.0", "result":{...}, "id":1}
+ * - 에러: {"jsonrpc":"2.0", "error":{"code":-32600, "message":"..."}, "id":1}
+ *
+ * 사용 방법:
+ * curl -X POST http://localhost:8080/jsonrpc \
+ *   -H "Content-Type: application/json" \
+ *   -d '{"jsonrpc":"2.0","method":"post.list","params":{},"id":1}'
+ *
+ * 지원 메서드:
+ * - post.list      - 모든 게시글 조회
+ * - post.get       - 특정 게시글 조회
+ * - post.create    - 새 게시글 생성
+ * - post.update    - 게시글 수정
+ * - post.delete    - 게시글 삭제
+ *
+ * REST vs JSON-RPC vs gRPC 비교:
+ * - REST: 리소스 중심, HTTP 메서드 활용, 캐싱 가능
+ * - JSON-RPC: 메서드 중심, 단일 엔드포인트, 간단한 RPC
+ * - gRPC: 고성능, 바이너리, HTTP/2, 타입 안전성
+ */
+
+/**
+ * JSON-RPC 요청 DTO
+ */
+class JsonRpcRequest {
+    private String jsonrpc = "2.0";
+    private String method;
+    private Object params;
+    private Object id;
+
+    // Constructors
+    public JsonRpcRequest() {
+    }
+
+    public JsonRpcRequest(String method, Object params, Object id) {
+        this.method = method;
+        this.params = params;
+        this.id = id;
+    }
+
+    // Getters and Setters
+    public String getJsonrpc() {
+        return jsonrpc;
+    }
+
+    public void setJsonrpc(String jsonrpc) {
+        this.jsonrpc = jsonrpc;
+    }
+
+    public String getMethod() {
+        return method;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
+    public Object getParams() {
+        return params;
+    }
+
+    public void setParams(Object params) {
+        this.params = params;
+    }
+
+    public Object getId() {
+        return id;
+    }
+
+    public void setId(Object id) {
+        this.id = id;
+    }
+}
+
+/**
+ * JSON-RPC 응답 DTO
+ */
+class JsonRpcResponse {
+    private String jsonrpc = "2.0";
+    private Object result;
+    private JsonRpcError error;
+    private Object id;
+
+    // Constructors
+    public JsonRpcResponse() {
+    }
+
+    public JsonRpcResponse(Object result, Object id) {
+        this.result = result;
+        this.id = id;
+    }
+
+    public JsonRpcResponse(JsonRpcError error, Object id) {
+        this.error = error;
+        this.id = id;
+    }
+
+    // Getters and Setters
+    public String getJsonrpc() {
+        return jsonrpc;
+    }
+
+    public void setJsonrpc(String jsonrpc) {
+        this.jsonrpc = jsonrpc;
+    }
+
+    public Object getResult() {
+        return result;
+    }
+
+    public void setResult(Object result) {
+        this.result = result;
+    }
+
+    public JsonRpcError getError() {
+        return error;
+    }
+
+    public void setError(JsonRpcError error) {
+        this.error = error;
+    }
+
+    public Object getId() {
+        return id;
+    }
+
+    public void setId(Object id) {
+        this.id = id;
+    }
+}
+
+/**
+ * JSON-RPC 에러 DTO
+ */
+class JsonRpcError {
+    private int code;
+    private String message;
+    private Object data;
+
+    // JSON-RPC 표준 에러 코드
+    public static final int PARSE_ERROR = -32700;
+    public static final int INVALID_REQUEST = -32600;
+    public static final int METHOD_NOT_FOUND = -32601;
+    public static final int INVALID_PARAMS = -32602;
+    public static final int INTERNAL_ERROR = -32603;
+
+    // 커스텀 에러 코드
+    public static final int RESOURCE_NOT_FOUND = -32001;
+    public static final int VALIDATION_ERROR = -32002;
+
+    // Constructors
+    public JsonRpcError() {
+    }
+
+    public JsonRpcError(int code, String message) {
+        this.code = code;
+        this.message = message;
+    }
+
+    public JsonRpcError(int code, String message, Object data) {
+        this.code = code;
+        this.message = message;
+        this.data = data;
+    }
+
+    // Getters and Setters
+    public int getCode() {
+        return code;
+    }
+
+    public void setCode(int code) {
+        this.code = code;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public Object getData() {
+        return data;
+    }
+
+    public void setData(Object data) {
+        this.data = data;
+    }
+}
+
+/**
+ * JSON-RPC 컨트롤러
+ *
+ * 단일 엔드포인트(/jsonrpc)로 모든 RPC 호출을 처리합니다.
+ * method 필드를 기반으로 적절한 서비스 메서드를 호출합니다.
+ */
+@RestController
+@RequestMapping("/jsonrpc")
+class JsonRpcController {
+
+    private final PostService postService;
+
+    public JsonRpcController(PostService postService) {
+        this.postService = postService;
+    }
+
+    @PostMapping
+    public ResponseEntity<JsonRpcResponse> handleJsonRpc(@RequestBody JsonRpcRequest request) {
+        try {
+            // 프로토콜 버전 검증
+            if (!"2.0".equals(request.getJsonrpc())) {
+                return ResponseEntity.ok(new JsonRpcResponse(
+                        new JsonRpcError(JsonRpcError.INVALID_REQUEST, "Invalid JSON-RPC version"),
+                        request.getId()
+                ));
+            }
+
+            // 메서드 검증
+            if (request.getMethod() == null || request.getMethod().isEmpty()) {
+                return ResponseEntity.ok(new JsonRpcResponse(
+                        new JsonRpcError(JsonRpcError.INVALID_REQUEST, "Method is required"),
+                        request.getId()
+                ));
+            }
+
+            // 메서드 라우팅
+            Object result = routeMethod(request.getMethod(), request.getParams());
+
+            return ResponseEntity.ok(new JsonRpcResponse(result, request.getId()));
+
+        } catch (JsonRpcMethodNotFoundException e) {
+            return ResponseEntity.ok(new JsonRpcResponse(
+                    new JsonRpcError(JsonRpcError.METHOD_NOT_FOUND, e.getMessage()),
+                    request.getId()
+            ));
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.ok(new JsonRpcResponse(
+                    new JsonRpcError(JsonRpcError.RESOURCE_NOT_FOUND, e.getMessage()),
+                    request.getId()
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.ok(new JsonRpcResponse(
+                    new JsonRpcError(JsonRpcError.INVALID_PARAMS, e.getMessage()),
+                    request.getId()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(new JsonRpcResponse(
+                    new JsonRpcError(JsonRpcError.INTERNAL_ERROR, "Internal error: " + e.getMessage()),
+                    request.getId()
+            ));
+        }
+    }
+
+    /**
+     * 메서드 이름을 기반으로 적절한 서비스 메서드를 호출합니다.
+     */
+    private Object routeMethod(String method, Object params) {
+        switch (method) {
+            case "post.list":
+                return handlePostList(params);
+
+            case "post.get":
+                return handlePostGet(params);
+
+            case "post.create":
+                return handlePostCreate(params);
+
+            case "post.update":
+                return handlePostUpdate(params);
+
+            case "post.delete":
+                return handlePostDelete(params);
+
+            default:
+                throw new JsonRpcMethodNotFoundException("Method not found: " + method);
+        }
+    }
+
+    /**
+     * post.list - 모든 게시글 조회
+     * params: {"author": "작성자"} (선택적)
+     */
+    private Object handlePostList(Object params) {
+        if (params instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> paramsMap = (Map<String, Object>) params;
+            String author = (String) paramsMap.get("author");
+
+            if (author != null && !author.isEmpty()) {
+                return postService.findByAuthor(author);
+            }
+        }
+        return postService.findAll();
+    }
+
+    /**
+     * post.get - 특정 게시글 조회
+     * params: {"id": 1}
+     */
+    private Object handlePostGet(Object params) {
+        if (!(params instanceof Map)) {
+            throw new IllegalArgumentException("Invalid params: expected object with 'id' field");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> paramsMap = (Map<String, Object>) params;
+        Object idObj = paramsMap.get("id");
+
+        if (idObj == null) {
+            throw new IllegalArgumentException("Missing required parameter: id");
+        }
+
+        Long id = convertToLong(idObj);
+        return postService.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Post not found with id: " + id));
+    }
+
+    /**
+     * post.create - 새 게시글 생성
+     * params: {"title": "제목", "content": "내용", "author": "작성자"}
+     */
+    private Object handlePostCreate(Object params) {
+        if (!(params instanceof Map)) {
+            throw new IllegalArgumentException("Invalid params: expected object");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> paramsMap = (Map<String, Object>) params;
+
+        String title = (String) paramsMap.get("title");
+        String content = (String) paramsMap.get("content");
+        String author = (String) paramsMap.get("author");
+
+        // 검증
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("Title is required");
+        }
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("Content is required");
+        }
+        if (author == null || author.isBlank()) {
+            throw new IllegalArgumentException("Author is required");
+        }
+
+        CreatePostRequest request = new CreatePostRequest(title, content, author);
+        return postService.create(request);
+    }
+
+    /**
+     * post.update - 게시글 수정
+     * params: {"id": 1, "title": "수정된 제목", "content": "수정된 내용"}
+     */
+    private Object handlePostUpdate(Object params) {
+        if (!(params instanceof Map)) {
+            throw new IllegalArgumentException("Invalid params: expected object");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> paramsMap = (Map<String, Object>) params;
+
+        Object idObj = paramsMap.get("id");
+        if (idObj == null) {
+            throw new IllegalArgumentException("Missing required parameter: id");
+        }
+
+        Long id = convertToLong(idObj);
+        String title = (String) paramsMap.get("title");
+        String content = (String) paramsMap.get("content");
+
+        UpdatePostRequest request = new UpdatePostRequest(title, content);
+        return postService.update(id, request);
+    }
+
+    /**
+     * post.delete - 게시글 삭제
+     * params: {"id": 1}
+     */
+    private Object handlePostDelete(Object params) {
+        if (!(params instanceof Map)) {
+            throw new IllegalArgumentException("Invalid params: expected object with 'id' field");
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> paramsMap = (Map<String, Object>) params;
+
+        Object idObj = paramsMap.get("id");
+        if (idObj == null) {
+            throw new IllegalArgumentException("Missing required parameter: id");
+        }
+
+        Long id = convertToLong(idObj);
+        postService.delete(id);
+
+        return Map.of("success", true, "message", "Post deleted successfully");
+    }
+
+    /**
+     * Object를 Long으로 변환 (JSON에서 Number가 Integer 또는 Long으로 올 수 있음)
+     */
+    private Long convertToLong(Object obj) {
+        if (obj instanceof Number) {
+            return ((Number) obj).longValue();
+        }
+        try {
+            return Long.parseLong(obj.toString());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid ID format: " + obj);
+        }
+    }
+}
+
+/**
+ * JSON-RPC 전용 예외: 메서드를 찾을 수 없음
+ */
+class JsonRpcMethodNotFoundException extends RuntimeException {
+    public JsonRpcMethodNotFoundException(String message) {
+        super(message);
     }
 }

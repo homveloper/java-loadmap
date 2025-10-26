@@ -4,11 +4,14 @@ README의 블로그 API 예제를 실제로 동작하는 단일 Java 파일로 �
 
 ## 주요 기능
 
-이 프로젝트는 동일한 블로그 API를 **세 가지 방식**으로 제공합니다:
+이 프로젝트는 동일한 블로그 API를 **네 가지 방식**으로 제공합니다:
 
 1. **어노테이션 방식 REST API** (`@RestController`) - 전통적인 Spring MVC 방식
-2. **Functional Endpoints** (`RouterFunction`) - 명시적 라우팅 방식
-3. **gRPC Service** - 고성능 RPC 프로토콜
+2. **Functional Endpoints** (`RouterFunction`) - 명시적 라우팅 방식 (Golang 스타일)
+3. **JSON-RPC over HTTP** - 경량 RPC 프로토콜
+4. **gRPC Service** - 고성능 바이너리 RPC 프로토콜
+
+**모든 방식이 동일한 서비스 레이어(`PostService`)를 공유**하여, 하나의 비즈니스 로직을 여러 프로토콜로 노출하는 방법을 보여줍니다.
 
 ## 프로젝트 구조
 
@@ -40,9 +43,10 @@ blog-api/
 - **Exception Handler**: `GlobalExceptionHandler` - 전역 예외 처리
 - **Custom Exceptions**: `ResourceNotFoundException` - 커스텀 예외
 
-### API 레이어 (3가지 방식)
+### API 레이어 (4가지 방식)
 - **PostController** - 어노테이션 방식 REST API (`@RestController`)
 - **PostHandler + PostRouter** - Functional Endpoints (명시적 라우팅)
+- **JsonRpcController** - JSON-RPC over HTTP
 - **BlogGrpcService** - gRPC 서비스 구현
 
 ## 기술 스택
@@ -94,15 +98,15 @@ java -jar target/blog-api-1.0.0.jar
 
 ## API 엔드포인트
 
-이 애플리케이션은 동일한 기능을 3가지 방식으로 제공합니다:
+이 애플리케이션은 동일한 기능을 4가지 방식으로 제공합니다:
 
-| 기능 | 어노테이션 방식 | Functional Endpoints | gRPC |
-|------|----------------|---------------------|------|
-| 전체 조회 | GET /api/posts | GET /functional/posts | ListPosts |
-| 단건 조회 | GET /api/posts/{id} | GET /functional/posts/{id} | GetPost |
-| 생성 | POST /api/posts | POST /functional/posts | CreatePost |
-| 수정 | PUT /api/posts/{id} | PUT /functional/posts/{id} | UpdatePost |
-| 삭제 | DELETE /api/posts/{id} | DELETE /functional/posts/{id} | DeletePost |
+| 기능 | 어노테이션 방식 | Functional Endpoints | JSON-RPC | gRPC |
+|------|----------------|---------------------|----------|------|
+| 전체 조회 | GET /api/posts | GET /functional/posts | post.list | ListPosts |
+| 단건 조회 | GET /api/posts/{id} | GET /functional/posts/{id} | post.get | GetPost |
+| 생성 | POST /api/posts | POST /functional/posts | post.create | CreatePost |
+| 수정 | PUT /api/posts/{id} | PUT /functional/posts/{id} | post.update | UpdatePost |
+| 삭제 | DELETE /api/posts/{id} | DELETE /functional/posts/{id} | post.delete | DeletePost |
 
 ---
 
@@ -349,7 +353,148 @@ public class PostRouter {
 
 ---
 
-## C. gRPC API (`:9090`)
+## C. JSON-RPC over HTTP (`POST /jsonrpc`)
+
+JSON-RPC 2.0 프로토콜을 사용하는 경량 RPC 방식입니다.
+
+**특징**:
+- 단일 엔드포인트로 모든 메서드 호출
+- JSON 형식의 요청/응답 (REST와 유사하지만 메서드 중심)
+- 표준화된 에러 코드
+- REST보다 간단한 API 설계
+
+### JSON-RPC 2.0 프로토콜 구조
+
+**요청 형식**:
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "methodName",
+  "params": {...},
+  "id": 1
+}
+```
+
+**성공 응답**:
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {...},
+  "id": 1
+}
+```
+
+**에러 응답**:
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32600,
+    "message": "Invalid Request"
+  },
+  "id": 1
+}
+```
+
+### 사용 예시
+
+```bash
+# 모든 게시글 조회
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.list",
+    "params": {},
+    "id": 1
+  }'
+
+# 작성자별 필터링
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.list",
+    "params": {"author": "홍길동"},
+    "id": 1
+  }'
+
+# 특정 게시글 조회
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.get",
+    "params": {"id": 1},
+    "id": 1
+  }'
+
+# 게시글 생성
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.create",
+    "params": {
+      "title": "JSON-RPC로 생성한 게시글",
+      "content": "JSON-RPC는 간단하고 효과적입니다!",
+      "author": "김개발"
+    },
+    "id": 1
+  }'
+
+# 게시글 수정
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.update",
+    "params": {
+      "id": 1,
+      "title": "수정된 제목",
+      "content": "수정된 내용"
+    },
+    "id": 1
+  }'
+
+# 게시글 삭제
+curl -X POST http://localhost:8080/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "post.delete",
+    "params": {"id": 1},
+    "id": 1
+  }'
+```
+
+### JSON-RPC 에러 코드
+
+| 코드 | 의미 | 설명 |
+|------|------|------|
+| -32700 | Parse error | JSON 파싱 실패 |
+| -32600 | Invalid Request | 잘못된 요청 형식 |
+| -32601 | Method not found | 존재하지 않는 메서드 |
+| -32602 | Invalid params | 잘못된 파라미터 |
+| -32603 | Internal error | 내부 서버 에러 |
+| -32001 | Resource not found | 리소스 없음 (커스텀) |
+| -32002 | Validation error | 검증 실패 (커스텀) |
+
+### REST vs JSON-RPC 비교
+
+| 특성 | REST | JSON-RPC |
+|------|------|----------|
+| 엔드포인트 | 리소스별 다수 | 단일 (/jsonrpc) |
+| HTTP 메서드 | GET, POST, PUT, DELETE | POST만 사용 |
+| 개념 | 리소스 중심 | 메서드/액션 중심 |
+| 캐싱 | HTTP 캐싱 가능 | 불가능 (모두 POST) |
+| 에러 처리 | HTTP 상태 코드 | JSON-RPC 에러 코드 |
+| 복잡도 | 중간 | 낮음 |
+| 사용 사례 | 공개 API, 웹 서비스 | 내부 API, 간단한 RPC |
+
+---
+
+## D. gRPC API (`:9090`)
 
 고성능 RPC 프로토콜로, HTTP/2와 Protocol Buffers를 사용합니다.
 
@@ -419,17 +564,30 @@ grpcurl -plaintext -d '{
 grpcurl -plaintext -d '{"id":1}' localhost:9090 blog.BlogService/DeletePost
 ```
 
-### REST vs gRPC 비교
+### 4가지 API 스타일 비교표
 
-| 특성 | REST (JSON) | gRPC (Protobuf) |
-|------|------------|-----------------|
-| 프로토콜 | HTTP/1.1 | HTTP/2 |
-| 데이터 형식 | JSON (텍스트) | Protobuf (바이너리) |
-| 성능 | 보통 | 빠름 (3-10배) |
-| 스키마 | 선택적 (OpenAPI) | 필수 (.proto) |
-| 브라우저 지원 | 좋음 | 제한적 |
-| 스트리밍 | 제한적 | 양방향 지원 |
-| 사용 사례 | 외부 API, 웹 앱 | 마이크로서비스 간 통신 |
+| 특성 | REST | Functional Endpoints | JSON-RPC | gRPC |
+|------|------|---------------------|----------|------|
+| **프로토콜** | HTTP/1.1 | HTTP/1.1 | HTTP/1.1 | HTTP/2 |
+| **데이터 형식** | JSON | JSON | JSON | Protobuf (바이너리) |
+| **엔드포인트** | 리소스별 다수 | 리소스별 다수 | 단일 | 서비스별 |
+| **개념** | 리소스 중심 | 리소스 중심 | 메서드 중심 | 메서드 중심 |
+| **HTTP 메서드** | GET, POST, PUT, DELETE | GET, POST, PUT, DELETE | POST만 | POST만 |
+| **스키마** | 선택적 (OpenAPI) | 선택적 | 선택적 | 필수 (.proto) |
+| **성능** | 보통 | 보통 | 보통 | 빠름 (3-10배) |
+| **브라우저 지원** | 좋음 | 좋음 | 좋음 | 제한적 |
+| **캐싱** | 가능 | 가능 | 불가능 | 불가능 |
+| **스트리밍** | 제한적 | 제한적 | 없음 | 양방향 지원 |
+| **코드 스타일** | 어노테이션 | 함수형/명시적 | 메서드 라우팅 | Proto 정의 |
+| **복잡도** | 중간 | 중간 | 낮음 | 높음 |
+| **사용 사례** | 공개 API | 동적 라우팅 | 간단한 내부 RPC | 마이크로서비스 |
+
+### 언제 어떤 방식을 사용할까?
+
+- **REST (어노테이션)**: 공개 API, 표준적인 웹 서비스, 대부분의 경우
+- **Functional Endpoints**: 동적 라우팅 필요, WebFlux 사용, 함수형 프로그래밍 선호
+- **JSON-RPC**: 간단한 내부 API, 메서드 기반 통신, 최소한의 복잡도
+- **gRPC**: 마이크로서비스 간 통신, 고성능 필요, 양방향 스트리밍
 
 ---
 
@@ -437,10 +595,11 @@ grpcurl -plaintext -d '{"id":1}' localhost:9090 blog.BlogService/DeletePost
 
 이 예제를 통해 다음을 학습할 수 있습니다:
 
-### 1. 다양한 API 스타일
+### 1. 다양한 API 스타일 (동일한 서비스 레이어 공유)
 - **어노테이션 방식**: 간결하고 직관적, 대부분의 Spring 프로젝트에서 사용
 - **Functional Endpoints**: 명시적 라우팅, 동적 설정 가능, WebFlux와 호환성
-- **gRPC**: 고성능 RPC, 마이크로서비스 아키텍처에 적합
+- **JSON-RPC**: 경량 RPC, 단일 엔드포인트, 메서드 기반 통신
+- **gRPC**: 고성능 바이너리 RPC, 마이크로서비스 아키텍처에 적합
 
 ### 2. Spring 핵심 개념
 - **단일 파일 구조**: 모든 컴포넌트가 하나의 파일에 정리되어 있어 전체 구조를 한눈에 파악 가능
@@ -452,9 +611,11 @@ grpcurl -plaintext -d '{"id":1}' localhost:9090 blog.BlogService/DeletePost
 - **DTO 패턴**: 요청/응답 데이터 분리
 
 ### 3. 실전 패턴
+- **다중 프로토콜 지원**: 하나의 비즈니스 로직을 여러 프로토콜로 노출
 - **Golang 스타일 라우팅**: Functional Endpoints로 Gin/Echo와 유사한 패턴 구현
-- **RPC 통신**: gRPC를 통한 효율적인 서비스 간 통신
+- **RPC 통신**: JSON-RPC와 gRPC를 통한 효율적인 서비스 간 통신
 - **프로토콜 버퍼**: 타입 안전한 API 계약
+- **서비스 레이어 재사용**: 모든 컨트롤러가 동일한 `PostService` 사용
 
 ## 확장 아이디어
 
