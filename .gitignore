@@ -1,0 +1,17 @@
+
+.vscode
+node_modules
+dist
+
+# Doodle - Build outputs and IDE files only
+doodle/**/target/
+doodle/**/build/
+doodle/**/*.class
+doodle/**/*.jar
+doodle/**/*.war
+doodle/**/.gradle/
+doodle/**/.idea/
+doodle/**/*.iml
+doodle/**/.settings/
+doodle/**/.project
+doodle/**/.classpath
