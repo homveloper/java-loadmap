@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>예매하기 - LiveSeat</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">LiveSeat</a>
+        <a th:href="@{/concerts/{id}(id=${concertId})}" class="btn btn-outline-light btn-sm">돌아가기</a>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <h1 class="mb-4">공연 예매</h1>
+
+            <div th:if="${errorMessage}" class="alert alert-danger" role="alert">
+                <span th:text="${errorMessage}">에러 메시지</span>
+            </div>
+
+            <form th:action="@{/bookings}" th:object="${bookingRequest}" method="post">
+                <input type="hidden" th:field="*{concertId}">
+
+                <div class="mb-3">
+                    <label for="customerName" class="form-label">예매자 이름</label>
+                    <input type="text" class="form-control" id="customerName" th:field="*{customerName}"
+                           th:classappend="${#fields.hasErrors('customerName')} ? 'is-invalid'">
+                    <div class="invalid-feedback" th:errors="*{customerName}">이름 오류</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="customerEmail" class="form-label">이메일</label>
+                    <input type="email" class="form-control" id="customerEmail" th:field="*{customerEmail}"
+                           th:classappend="${#fields.hasErrors('customerEmail')} ? 'is-invalid'">
+                    <div class="invalid-feedback" th:errors="*{customerEmail}">이메일 오류</div>
+                    <small class="form-text text-muted">예매 내역 조회 시 사용됩니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="bookingDate" class="form-label">관람 날짜</label>
+                    <input type="date" class="form-control" id="bookingDate" th:field="*{bookingDate}"
+                           th:classappend="${#fields.hasErrors('bookingDate')} ? 'is-invalid'">
+                    <div class="invalid-feedback" th:errors="*{bookingDate}">날짜 오류</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="seatGrade" class="form-label">좌석 등급</label>
+                    <select class="form-select" id="seatGrade" th:field="*{seatGrade}"
+                            th:classappend="${#fields.hasErrors('seatGrade')} ? 'is-invalid'">
+                        <option value="">-- 선택하세요 --</option>
+                        <option value="VIP">VIP석</option>
+                        <option value="R">R석</option>
+                        <option value="S">S석</option>
+                    </select>
+                    <div class="invalid-feedback" th:errors="*{seatGrade}">좌석 등급 오류</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="seatCount" class="form-label">예매 수량</label>
+                    <input type="number" class="form-control" id="seatCount" th:field="*{seatCount}" min="1" max="10"
+                           th:classappend="${#fields.hasErrors('seatCount')} ? 'is-invalid'">
+                    <div class="invalid-feedback" th:errors="*{seatCount}">수량 오류</div>
+                    <small class="form-text text-muted">최대 10장까지 예매 가능</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">예매하기</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>공연 목록 - LiveSeat</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">LiveSeat</a>
+        <div>
+            <a href="/bookings/my" class="btn btn-outline-light btn-sm">내 예매</a>
+            <a href="/admin" class="btn btn-outline-warning btn-sm">관리자</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <h1 class="mb-4">공연 목록</h1>
+
+    <div class="row">
+        <div th:each="concert : ${concerts.content}" class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title" th:text="${concert.title}">공연 제목</h5>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <span th:text="${#temporals.format(concert.startDate, 'yyyy-MM-dd')}"></span> ~
+                            <span th:text="${#temporals.format(concert.endDate, 'yyyy-MM-dd')}"></span>
+                        </small>
+                    </p>
+                    <p class="card-text">
+                        잔여 좌석: <strong th:text="${concert.availableSeats} + ' / ' + ${concert.totalSeats}"></strong>
+                    </p>
+                    <a th:href="@{/concerts/{id}(id=${concert.id})}" class="btn btn-primary">상세보기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <nav th:if="${concerts.totalPages > 1}">
+        <ul class="pagination justify-content-center">
+            <li class="page-item" th:classappend="${currentPage == 0} ? 'disabled'">
+                <a class="page-link" th:href="@{/concerts(page=${currentPage - 1})}">이전</a>
+            </li>
+            <li th:each="i : ${#numbers.sequence(0, concerts.totalPages - 1)}"
+                class="page-item" th:classappend="${i == currentPage} ? 'active'">
+                <a class="page-link" th:href="@{/concerts(page=${i})}" th:text="${i + 1}">1</a>
+            </li>
+            <li class="page-item" th:classappend="${currentPage == concerts.totalPages - 1} ? 'disabled'">
+                <a class="page-link" th:href="@{/concerts(page=${currentPage + 1})}">다음</a>
+            </li>
+        </ul>
+    </nav>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

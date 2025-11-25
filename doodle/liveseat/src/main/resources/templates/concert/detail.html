@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${concert.title} + ' - LiveSeat'">공연 상세</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">LiveSeat</a>
+        <a href="/concerts" class="btn btn-outline-light btn-sm">공연 목록</a>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-8">
+            <h1 th:text="${concert.title}">공연 제목</h1>
+            <p class="text-muted">
+                <span th:text="${#temporals.format(concert.startDate, 'yyyy-MM-dd')}"></span> ~
+                <span th:text="${#temporals.format(concert.endDate, 'yyyy-MM-dd')}"></span>
+            </p>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">공연 소개</h5>
+                    <p class="card-text" th:text="${concert.description}">공연 설명</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">좌석 정보</h5>
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th>등급</th>
+                            <th>가격</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr>
+                            <td>VIP석</td>
+                            <td th:text="${#numbers.formatInteger(concert.priceVip, 0, 'COMMA')} + '원'">100,000원</td>
+                        </tr>
+                        <tr>
+                            <td>R석</td>
+                            <td th:text="${#numbers.formatInteger(concert.priceR, 0, 'COMMA')} + '원'">70,000원</td>
+                        </tr>
+                        <tr>
+                            <td>S석</td>
+                            <td th:text="${#numbers.formatInteger(concert.priceS, 0, 'COMMA')} + '원'">50,000원</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">예매 정보</h5>
+                    <p class="card-text">
+                        <strong>전체 좌석:</strong> <span th:text="${concert.totalSeats}">100</span>석<br>
+                        <strong>잔여 좌석:</strong> <span th:text="${concert.availableSeats}" class="text-primary">50</span>석
+                    </p>
+                    <div class="progress mb-3">
+                        <div class="progress-bar" role="progressbar"
+                             th:style="'width: ' + ${(concert.totalSeats - concert.availableSeats) * 100 / concert.totalSeats} + '%'"
+                             th:text="${(concert.totalSeats - concert.availableSeats) * 100 / concert.totalSeats} + '%'">
+                            50%
+                        </div>
+                    </div>
+                    <a th:href="@{/bookings/new(concertId=${concert.id})}"
+                       class="btn btn-success w-100"
+                       th:classappend="${concert.availableSeats == 0} ? 'disabled'">
+                        <span th:if="${concert.availableSeats > 0}">예매하기</span>
+                        <span th:if="${concert.availableSeats == 0}">매진</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
